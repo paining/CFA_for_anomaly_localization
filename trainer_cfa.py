@@ -149,13 +149,21 @@ def run():
             
             r'Image-level AUROC'
             fpr, tpr, img_roc_auc = cal_img_roc(scores, gt_list)
-            best_img_roc = img_roc_auc if img_roc_auc > best_img_roc else best_img_roc
+            #best_img_roc = img_roc_auc if img_roc_auc > best_img_roc else best_img_roc
+            if img_roc_auc > best_img_roc:
+                best_img_roc = img_roc_auc
+                best_img_fpr = fpr
+                best_img_tpr = tpr
 
-            fig_img_rocauc.plot(fpr, tpr, label='%s img_ROCAUC: %.3f' % (class_name, img_roc_auc))
+            #fig_img_rocauc.plot(fpr, tpr, label='%s img_ROCAUC: %.3f' % (class_name, img_roc_auc))
 
             r'Pixel-level AUROC'
             fpr, tpr, per_pixel_rocauc = cal_pxl_roc(gt_mask, scores)
-            best_pxl_roc = per_pixel_rocauc if per_pixel_rocauc > best_pxl_roc else best_pxl_roc
+            #best_pxl_roc = per_pixel_rocauc if per_pixel_rocauc > best_pxl_roc else best_pxl_roc
+            if per_pixel_rocauc > best_pxl_roc:
+                best_pxl_roc = per_pixel_rocauc
+                best_pxl_fpr = fpr
+                best_pxl_tpr = tpr
             
             r'Pixel-level AUPRO'
             per_pixel_proauc = cal_pxl_pro(gt_mask, scores)
@@ -173,7 +181,8 @@ def run():
         total_pixel_roc_auc.append(best_pxl_roc)
         total_pixel_pro_auc.append(best_pxl_pro)
 
-        fig_pixel_rocauc.plot(fpr, tpr, label='%s ROCAUC: %.3f' % (class_name, per_pixel_rocauc))
+        fig_img_rocauc.plot(best_img_fpr, best_img_tpr, label='%s img_ROCAUC: %.3f' % (class_name, img_roc_auc))
+        fig_pixel_rocauc.plot(best_pxl_fpr, best_pxl_tpr, label='%s ROCAUC: %.3f' % (class_name, per_pixel_rocauc))
         save_dir = args.save_path + '/' + f'pictures_{args.cnn}'
         os.makedirs(save_dir, exist_ok=True)
         plot_fig(test_imgs, scores, gt_mask_list, threshold, save_dir, class_name)

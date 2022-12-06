@@ -4,4 +4,4 @@ __pycache__/
 *$py.class
 
 # Result Directories
-./mvtec_result
+mvtec_result
