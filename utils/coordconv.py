@@ -2,21 +2,51 @@ import torch.nn.modules.conv as conv
 import torch.nn as nn
 import torch
 
+
 class CoordConv2d(conv.Conv2d):
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1,
-                padding=0, dilation=1, groups=1, bias=True, with_r=False, use_cuda=True):
-        super(CoordConv2d, self).__init__(in_channels, out_channels, kernel_size,
-                                        stride, padding, dilation, groups, bias)
+    def __init__(
+        self,
+        in_channels,
+        out_channels,
+        kernel_size,
+        stride=1,
+        padding=0,
+        dilation=1,
+        groups=1,
+        bias=True,
+        with_r=False,
+        use_cuda=True,
+    ):
+        super(CoordConv2d, self).__init__(
+            in_channels,
+            out_channels,
+            kernel_size,
+            stride,
+            padding,
+            dilation,
+            groups,
+            bias,
+        )
         self.rank = 2
         self.addcoords = AddCoords(self.rank, with_r, use_cuda=use_cuda)
-        self.conv = nn.Conv2d(in_channels + self.rank + int(with_r), out_channels,
-                            kernel_size, stride, padding, dilation, groups, bias)
+        self.conv = nn.Conv2d(
+            in_channels + self.rank + int(with_r),
+            out_channels,
+            kernel_size,
+            stride,
+            padding,
+            dilation,
+            groups,
+            bias,
+        )
 
     def forward(self, input_tensor):
         out = self.addcoords(input_tensor)
         out = self.conv(out)
 
         return out
+
+
 class AddCoords(nn.Module):
     def __init__(self, rank, with_r=False, use_cuda=True):
         super(AddCoords, self).__init__()
@@ -55,7 +85,9 @@ class AddCoords(nn.Module):
         out = torch.cat([input_tensor, xx_channel, yy_channel], dim=1)
 
         if self.with_r:
-            rr = torch.sqrt(torch.pow(xx_channel - 0.5, 2) + torch.pow(yy_channel - 0.5, 2))
+            rr = torch.sqrt(
+                torch.pow(xx_channel - 0.5, 2) + torch.pow(yy_channel - 0.5, 2)
+            )
             out = torch.cat([out, rr], dim=1)
 
         return out
