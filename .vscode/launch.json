@@ -23,6 +23,19 @@
                 "--data_path", "C:/Users/YSH/OneDrive - ysh-pleiony/OneDrive - Pleiony,Inc/data/public/mvtec_anomaly_detection", 
                 "--class_name", "bottle"
             ]
+        },
+        {
+            "name": "fine_tuning",
+            "type": "python",
+            "request": "launch",
+            "program": "trainer_cfa.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":[
+                "--data_path", "C:/Users/YSH/OneDrive - ysh-pleiony/OneDrive - Pleiony,Inc/data/public/mvtec_anomaly_detection", 
+                "--class_name", "bottle",
+                "--anomaly_set", "broken_small"
+            ]
         }
     ]
 }

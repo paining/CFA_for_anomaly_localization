@@ -25,35 +25,45 @@ class DSVDD(nn.Module):
 
         self.r = nn.Parameter(1e-5 * torch.ones(1), requires_grad=True)
         self.Descriptor = Descriptor(self.gamma_d, cnn).to(device)
-        self._init_centroid(model, data_loader)
-        self.C = rearrange(self.C, "b c h w -> (b h w) c").detach()
+        self._init_centroid(model, data_loader)  # (1, C, H, W)
+        # Memory Bank Size(M) = Number of Images * H * W
+        self.C = rearrange(self.C, "b c h w -> (b h w) c").detach()  # (M, C)
 
         if self.gamma_c > 1:
             self.C = self.C.cpu().detach().numpy()
+            n_clusters = self.C.shape[0] // self.gamma_c
+            print("Number of Memory Bank Clusters =", n_clusters)
             self.C = (
-                KMeans(
-                    n_clusters=(self.scale**2) // self.gamma_c, max_iter=3000
-                )
+                KMeans(n_clusters=n_clusters, max_iter=3000, verbose=1)
                 .fit(self.C)
                 .cluster_centers_
             )
             self.C = torch.Tensor(self.C).to(device)
 
-        self.C = self.C.transpose(-1, -2).detach()
+        self.C = self.C.transpose(-1, -2).detach()  # (C, M) = (C, H*W)
         self.C = nn.Parameter(self.C, requires_grad=False)
 
-    def forward(self, p):
+        print("Initialize Model Done.")
+
+    def forward(self, p, mask=None):
         phi_p = self.Descriptor(p)
         phi_p = rearrange(phi_p, "b c h w -> b (h w) c")
+        if mask == None:
+            mask = torch.zeros(
+                *phi_p.shape[:2], dtype=torch.bool, device=phi_p.device
+            )
+        else:
+            mask = rearrange(mask, "b c h w -> b (h w) c")
 
         score = 0
         loss = 0
         if self.training:
-            loss = self._soft_boundary(phi_p)
+            loss = self._soft_boundary(phi_p, mask)
         else:
             features = torch.sum(torch.pow(phi_p, 2), 2, keepdim=True)
             centers = torch.sum(torch.pow(self.C, 2), 0, keepdim=True)
             f_c = 2 * torch.matmul(phi_p, (self.C))
+            # (B, H*W, M) = (B, H*W, 1) + (1, M) - (B, H*W, M)
             dist = features + centers - f_c
             dist = torch.sqrt(dist)
 
@@ -61,31 +71,52 @@ class DSVDD(nn.Module):
             dist = dist.topk(n_neighbors, largest=False).values
 
             dist = (F.softmin(dist, dim=-1)[:, :, 0]) * dist[:, :, 0]
-            dist = dist.unsqueeze(-1)
+            dist = dist.unsqueeze(-1)  # (B, H*W)
 
             score = rearrange(dist, "b (h w) c -> b c h w", h=self.scale)
 
         return loss, score
 
-    def _soft_boundary(self, phi_p):
+    def _soft_boundary(self, phi_p: torch.Tensor, mask):
+        """
+        phi_p : input patch-wise feature (B, H*W, C)
+
+        """
+        # (B, H*W, 1)
         features = torch.sum(torch.pow(phi_p, 2), 2, keepdim=True)
+        # (1, M)
         centers = torch.sum(torch.pow(self.C, 2), 0, keepdim=True)
+        # (B, H*W, C)x(C, M) = (B, H*W, M)
         f_c = 2 * torch.matmul(phi_p, (self.C))
+        # (B, H*W, M) = (B, H*W, 1) + (1, M) - (B, H*W, M)
         dist = features + centers - f_c
         n_neighbors = self.K + self.J
         dist = dist.topk(n_neighbors, largest=False).values
 
+        # Top K clusters get closer
+        # loss (B, H*W, M) += dist > r^2
         score = dist[:, :, : self.K] - self.r**2
+        score = score[mask == 0]
         L_att = (1 / self.nu) * torch.mean(
             torch.max(torch.zeros_like(score), score)
         )
 
-        score = self.r**2 - dist[:, :, self.J :]
+        # After J clusters get further away
+        # loss += dist < r^2 - alpha
+        score = self.r**2 - dist[:, :, self.K :]
+        score = score[mask == 0]
         L_rep = (1 / self.nu) * torch.mean(
             torch.max(torch.zeros_like(score), score - self.alpha)
         )
 
-        loss = L_att + L_rep
+        # loss += dist < (2*r)^2
+        score = (2*self.r)**2 - dist
+        score = score[mask == 1]
+        L_ano = (1 / self.nu) * torch.mean(
+            torch.max(torch.zeros_like(score), score)
+        ) if len(score) else 0
+
+        loss = L_att + L_rep + L_ano
 
         return loss
 

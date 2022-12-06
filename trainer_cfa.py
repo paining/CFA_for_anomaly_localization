@@ -11,6 +11,7 @@ from cnn.vgg import vgg19_bn as vgg19
 
 import datasets.mvtec as mvtec
 from datasets.mvtec import MVTecDataset
+from datasets.mvtec_finetuning import MVTecAnomalyDataset
 from utils.metric import *
 from utils.visualizer import *
 
@@ -39,6 +40,8 @@ def parse_args():
     parser.add_argument("--gamma_d", type=int, default=1)
 
     parser.add_argument("--class_name", type=str, default="all")
+    parser.add_argument("--pretrained", type=str, default=None)
+    parser.add_argument("--anomaly_set", type=str, default=None)
 
     return parser.parse_args()
 
@@ -59,7 +62,13 @@ def run():
     total_pixel_roc_auc = []
     total_pixel_pro_auc = []
 
-    fig, ax = plt.subplots(1, 2, figsize=(20, 10))
+    fig_loss = plt.figure("loss")
+    ax_loss_train = fig_loss.subplots(1, 1)
+    ax_loss_train.set_yscale("log")
+    ax_loss_val = ax_loss_train.twinx()
+    ax_loss_val.set_yscale("log")
+    fig = plt.figure("AUROC", figsize=(20, 10))
+    ax = fig.subplots(1, 2)
     fig_img_rocauc = ax[0]
     fig_pixel_rocauc = ax[1]
 
@@ -67,6 +76,10 @@ def run():
         best_img_roc = -1
         best_pxl_roc = -1
         best_pxl_pro = -1
+        training_loss = []
+        eval_loss = []
+        save_path = os.path.join(args.save_path, class_name)
+        os.makedirs(save_path, exist_ok=True)
         print(" ")
         print("%s | newly initialized..." % class_name)
 
@@ -78,6 +91,17 @@ def run():
             is_train=True,
             wild_ver=args.Rd,
         )
+
+        if args.anomaly_set:
+            anomaly_dataset = MVTecAnomalyDataset(
+                dataset_path=args.data_path,
+                class_name=class_name,
+                anomaly_set=args.anomaly_set,
+                resize=256,
+                cropsize=args.size,
+                is_train=True,
+                wild_ver=args.Rd,
+            )
 
         test_dataset = MVTecDataset(
             dataset_path=args.data_path,
@@ -117,6 +141,8 @@ def run():
         loss_fn = DSVDD(
             model, train_loader, args.cnn, args.gamma_c, args.gamma_d, device
         )
+        if args.pretrained:
+            loss_fn.load_state_dict(torch.load(args.pretrained))
         loss_fn = loss_fn.to(device)
 
         epochs = 30
@@ -136,6 +162,7 @@ def run():
             heatmaps = None
 
             loss_fn.train()
+            losses = []
             for (x, _, _) in tqdm(train_loader, desc="training", leave=False):
                 optimizer.zero_grad()
                 p = model(x.to(device))
@@ -143,6 +170,11 @@ def run():
                 loss, _ = loss_fn(p)
                 loss.backward()
                 optimizer.step()
+                losses.append(loss.item())
+            training_loss.append(np.mean(losses).item())
+            ax_loss_train.clear()
+            ax_loss_val.clear()
+            ax_loss_train.plot(training_loss, '-r', label="training")
 
             loss_fn.eval()
             for x, y, mask in tqdm(test_loader, desc="evaluation", leave=False):
@@ -159,6 +191,10 @@ def run():
                     if heatmaps != None
                     else heatmap
                 )
+            eval_loss.append(torch.mean(heatmaps).item())
+            ax_loss_val.plot(eval_loss, '-b', label="eval")
+            fig_loss.legend()
+            fig_loss.savefig(os.path.join(save_path, "loss.png"), dpi=100)
 
             heatmaps = upsample(heatmaps, size=x.size(2), mode="bilinear")
             heatmaps = gaussian_smooth(heatmaps, sigma=4)
@@ -176,6 +212,11 @@ def run():
                 best_img_roc = img_roc_auc
                 best_img_fpr = fpr
                 best_img_tpr = tpr
+
+                torch.save(
+                    loss_fn.state_dict(), 
+                    os.path.join(save_path, f"{class_name}_best.pt")
+                )
 
             # fig_img_rocauc.plot(fpr, tpr, label='%s img_ROCAUC: %.3f' % (class_name, img_roc_auc))
 
