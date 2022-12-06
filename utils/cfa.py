@@ -38,24 +38,25 @@ class DSVDD(nn.Module):
     def forward(self, p):
         phi_p = self.Descriptor(p)       
         phi_p = rearrange(phi_p, 'b c h w -> b (h w) c')
-        
-        features = torch.sum(torch.pow(phi_p, 2), 2, keepdim=True)    
-        centers  = torch.sum(torch.pow(self.C, 2), 0, keepdim=True)
-        f_c      = 2 * torch.matmul(phi_p, (self.C))
-        dist     = features + centers - f_c
-        dist     = torch.sqrt(dist)
 
-        n_neighbors = self.K
-        dist     = dist.topk(n_neighbors, largest=False).values
-
-        dist = (F.softmin(dist, dim=-1)[:, :, 0]) * dist[:, :, 0]
-        dist = dist.unsqueeze(-1)
-
-        score = rearrange(dist, 'b (h w) c -> b c h w', h=self.scale)
-        
+        score = 0
         loss = 0
         if self.training:
             loss = self._soft_boundary(phi_p)
+        else:
+            features = torch.sum(torch.pow(phi_p, 2), 2, keepdim=True)    
+            centers  = torch.sum(torch.pow(self.C, 2), 0, keepdim=True)
+            f_c      = 2 * torch.matmul(phi_p, (self.C))
+            dist     = features + centers - f_c
+            dist     = torch.sqrt(dist)
+
+            n_neighbors = self.K
+            dist     = dist.topk(n_neighbors, largest=False).values
+
+            dist = (F.softmin(dist, dim=-1)[:, :, 0]) * dist[:, :, 0]
+            dist = dist.unsqueeze(-1)
+
+            score = rearrange(dist, 'b (h w) c -> b c h w', h=self.scale)
 
         return loss, score
 

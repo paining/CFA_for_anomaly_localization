@@ -118,7 +118,7 @@ def run():
             heatmaps = None
 
             loss_fn.train()
-            for (x, _, _) in train_loader:
+            for (x, _, _) in tqdm(train_loader, desc="training", leave=False):
                 optimizer.zero_grad()
                 p = model(x.to(device))
                 
@@ -127,7 +127,7 @@ def run():
                 optimizer.step()
             
             loss_fn.eval()
-            for x, y, mask in test_loader:
+            for x, y, mask in tqdm(test_loader, desc="evaluation", leave=False):
                 test_imgs.extend(x.cpu().detach().numpy())
                 gt_list.extend(y.cpu().detach().numpy())
                 gt_mask_list.extend(mask.cpu().detach().numpy())
@@ -161,9 +161,9 @@ def run():
             per_pixel_proauc = cal_pxl_pro(gt_mask, scores)
             best_pxl_pro = per_pixel_proauc if per_pixel_proauc > best_pxl_pro else best_pxl_pro
 
-            print('[%d / %d]image ROCAUC: %.3f | best: %.3f'% (epoch, epochs, img_roc_auc, best_img_roc))
-            print('[%d / %d]pixel ROCAUC: %.3f | best: %.3f'% (epoch, epochs, per_pixel_rocauc, best_pxl_roc))
-            print('[%d / %d]pixel PROAUC: %.3f | best: %.3f'% (epoch, epochs, per_pixel_proauc, best_pxl_pro))
+            tqdm.write('[%d / %d]image ROCAUC: %.3f | best: %.3f'% (epoch, epochs, img_roc_auc, best_img_roc))
+            tqdm.write('[%d / %d]pixel ROCAUC: %.3f | best: %.3f'% (epoch, epochs, per_pixel_rocauc, best_pxl_roc))
+            tqdm.write('[%d / %d]pixel PROAUC: %.3f | best: %.3f'% (epoch, epochs, per_pixel_proauc, best_pxl_pro))
 
         print('image ROCAUC: %.3f'% (best_img_roc))
         print('pixel ROCAUC: %.3f'% (best_pxl_roc))
