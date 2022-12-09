@@ -48,12 +48,6 @@ class DSVDD(nn.Module):
     def forward(self, p, mask=None):
         phi_p = self.Descriptor(p)
         phi_p = rearrange(phi_p, "b c h w -> b (h w) c")
-        if mask == None:
-            mask = torch.zeros(
-                *phi_p.shape[:2], dtype=torch.bool, device=phi_p.device
-            )
-        else:
-            mask = rearrange(mask, "b c h w -> b (h w) c")
 
         score = 0
         loss = 0
@@ -82,6 +76,13 @@ class DSVDD(nn.Module):
         phi_p : input patch-wise feature (B, H*W, C)
 
         """
+        if mask == None:
+            mask = torch.zeros(
+                *phi_p.shape[:2], dtype=torch.bool, device=phi_p.device
+            )
+        else:
+            mask = rearrange(mask, "b c h w -> b (h w) c")
+        mask = mask.squeeze(-1)
         # (B, H*W, 1)
         features = torch.sum(torch.pow(phi_p, 2), 2, keepdim=True)
         # (1, M)
@@ -121,7 +122,7 @@ class DSVDD(nn.Module):
         return loss
 
     def _init_centroid(self, model, data_loader):
-        for i, (x, _, _) in enumerate(tqdm(data_loader)):
+        for i, (x, _, _) in enumerate(tqdm(data_loader, desc="initialize centroid")):
             x = x.to(self.device)
             p = model(x)
             self.scale = p[0].size(2)

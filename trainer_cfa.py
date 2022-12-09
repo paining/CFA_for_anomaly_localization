@@ -1,5 +1,6 @@
 import random
 import argparse
+#import logging
 
 import torch
 from torch.utils.data import DataLoader
@@ -23,6 +24,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda" if use_cuda else "cpu")
 
+#logging.basicConfig(format="%(levelname)s : %(message)s", level=logging.DEBUG)
 
 def parse_args():
     parser = argparse.ArgumentParser("CFA configuration")
@@ -42,6 +44,8 @@ def parse_args():
     parser.add_argument("--class_name", type=str, default="all")
     parser.add_argument("--pretrained", type=str, default=None)
     parser.add_argument("--anomaly_set", type=str, default=None)
+    parser.add_argument("--epochs", type=int, default=30)
+    parser.add_argument("--eval", action="store_true")
 
     return parser.parse_args()
 
@@ -100,17 +104,29 @@ def run():
                 resize=256,
                 cropsize=args.size,
                 is_train=True,
+                is_normal=True,
                 wild_ver=args.Rd,
             )
 
-        test_dataset = MVTecDataset(
-            dataset_path=args.data_path,
-            class_name=class_name,
-            resize=256,
-            cropsize=args.size,
-            is_train=False,
-            wild_ver=args.Rd,
-        )
+        if args.anomaly_set:
+            test_dataset = MVTecDataset(
+                dataset_path=args.data_path,
+                class_name=class_name,
+                resize=256,
+                cropsize=args.size,
+                is_train=False,
+                wild_ver=args.Rd,
+                anomaly_subset=[args.anomaly_set]
+            )
+        else:
+            test_dataset = MVTecDataset(
+                dataset_path=args.data_path,
+                class_name=class_name,
+                resize=256,
+                cropsize=args.size,
+                is_train=False,
+                wild_ver=args.Rd,
+            )
 
         train_loader = DataLoader(
             dataset=train_dataset,
@@ -119,6 +135,14 @@ def run():
             shuffle=True,
             drop_last=True,
         )
+        if args.anomaly_set:
+            anomaly_loader = DataLoader(
+                dataset=anomaly_dataset,
+                batch_size=4,
+                pin_memory=True,
+                shuffle=True,
+                drop_last=True,
+            )
 
         test_loader = DataLoader(
             dataset=test_dataset,
@@ -142,16 +166,67 @@ def run():
             model, train_loader, args.cnn, args.gamma_c, args.gamma_d, device
         )
         if args.pretrained:
+            print("loading pretrained model : ", args.pretrained)
             loss_fn.load_state_dict(torch.load(args.pretrained))
         loss_fn = loss_fn.to(device)
 
-        epochs = 30
+        epochs = args.epochs
         params = [
             {"params": loss_fn.parameters()},
         ]
         optimizer = optim.AdamW(
             params=params, lr=1e-3, weight_decay=5e-4, amsgrad=True
         )
+
+        if args.eval:
+            test_imgs = list()
+            gt_mask_list = list()
+            gt_list = list()
+            heatmaps = None
+            loss_fn.eval()
+            for x, y, mask in tqdm(test_loader, desc="evaluation", leave=False):
+                test_imgs.extend(x.cpu().detach().numpy())
+                gt_list.extend(y.cpu().detach().numpy())
+                gt_mask_list.extend(mask.cpu().detach().numpy())
+
+                p = model(x.to(device))
+                _, score = loss_fn(p)
+                heatmap = score.cpu().detach()
+                heatmap = torch.mean(heatmap, dim=1)
+                heatmaps = (
+                    torch.cat((heatmaps, heatmap), dim=0)
+                    if heatmaps != None
+                    else heatmap
+                )
+
+            heatmaps = upsample(heatmaps, size=x.size(2), mode="bilinear")
+            heatmaps = gaussian_smooth(heatmaps, sigma=4)
+
+            gt_mask = np.asarray(gt_mask_list)
+            scores = rescale(heatmaps)
+
+            scores = scores
+            threshold = get_threshold(gt_mask, scores)
+
+            r"Image-level AUROC"
+            fpr, tpr, img_roc_auc = cal_img_roc(scores, gt_list)
+
+            r"Pixel-level AUROC"
+            fpr, tpr, per_pixel_rocauc = cal_pxl_roc(gt_mask, scores)
+
+            r"Pixel-level AUPRO"
+            per_pixel_proauc = cal_pxl_pro(gt_mask, scores)
+            
+            print("image ROCAUC: %.3f" % (img_roc_auc))
+            print("pixel ROCAUC: %.3f" % (per_pixel_rocauc))
+            print("pixel ROCAUC: %.3f" % (per_pixel_proauc))
+
+            save_dir = args.save_path + "/" + f"pictures_{args.cnn}"
+            os.makedirs(save_dir, exist_ok=True)
+            plot_fig(
+                test_imgs, scores, gt_mask_list, threshold, save_dir, class_name
+            )
+            continue
 
         for epoch in tqdm(range(epochs), "%s -->" % (class_name)):
             r"TEST PHASE"
@@ -163,14 +238,42 @@ def run():
 
             loss_fn.train()
             losses = []
-            for (x, _, _) in tqdm(train_loader, desc="training", leave=False):
-                optimizer.zero_grad()
-                p = model(x.to(device))
+            if args.anomaly_set:
+                for (x, _, ma), (ax, _, ama) in tqdm(
+                    zip(train_loader, anomaly_loader), 
+                    desc="training", 
+                    leave=False
+                ):
+                    p = model(x.to(device))
+                    ap = model(ax.to(device))
+                    p = [
+                        torch.concat([pl, apl], dim=0)
+                        for pl, apl in zip(p, ap)
+                    ]
+                    if ma == None:
+                        ma = torch.zeros_like(x, dtype=torch.bool)
+                    ma = torch.concat([ma, ama], dim=0).to(device)
+                    ma = F.interpolate(ma, p[0].shape[-2:], mode="nearest")
 
-                loss, _ = loss_fn(p)
-                loss.backward()
-                optimizer.step()
-                losses.append(loss.item())
+                    loss, _ = loss_fn(p, ma)
+                    loss.backward()
+                    optimizer.step()
+                    losses.append(loss.item())
+            else:
+                for (x, _, ma) in tqdm(
+                    train_loader, desc="training", leave=False
+                ):
+                    optimizer.zero_grad()
+                    p = model(x.to(device))
+                    if ma == None:
+                        ma = torch.zeros_like(x, dtype=torch.bool)
+                    ma = F.interpolate(ma, p[0].shape[-2:], mode="nearest").to(device)
+
+                    loss, _ = loss_fn(p, ma)
+                    loss.backward()
+                    optimizer.step()
+                    losses.append(loss.item())
+
             training_loss.append(np.mean(losses).item())
             ax_loss_train.clear()
             ax_loss_val.clear()
@@ -217,6 +320,7 @@ def run():
                     loss_fn.state_dict(), 
                     os.path.join(save_path, f"{class_name}_best.pt")
                 )
+                tqdm.write(f"Best epoch = {epoch}, roc = {img_roc_auc:.4f}")
 
             # fig_img_rocauc.plot(fpr, tpr, label='%s img_ROCAUC: %.3f' % (class_name, img_roc_auc))
 

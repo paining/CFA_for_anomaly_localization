@@ -3,6 +3,7 @@ from PIL import Image
 import torch
 from torch.utils.data import Dataset
 from torchvision import transforms as T
+from tqdm import tqdm
 
 CLASS_NAMES = [
     "bottle",
@@ -32,6 +33,7 @@ class MVTecDataset(Dataset):
         resize=256,
         cropsize=224,
         wild_ver=False,
+        anomaly_subset=[],
     ):
         assert (
             class_name in CLASS_NAMES
@@ -41,6 +43,7 @@ class MVTecDataset(Dataset):
         self.is_train = is_train
         self.resize = resize
         self.cropsize = cropsize
+        self.anomaly_subset = anomaly_subset
 
         self.x, self.y, self.mask = self.load_dataset_folder()
 
@@ -88,6 +91,8 @@ class MVTecDataset(Dataset):
 
     def __getitem__(self, idx):
         x, y, mask = self.x[idx], self.y[idx], self.mask[idx]
+        # if self.is_train == False: 
+        tqdm.write(f"{os.path.relpath(x, self.dataset_path):40}, {y}")
         x = Image.open(x).convert("RGB")
         x = self.transform_x(x)
 
@@ -112,6 +117,9 @@ class MVTecDataset(Dataset):
         )
 
         img_types = sorted(os.listdir(img_dir))
+        i_n = -1
+        i_an = 1
+        label_by_types = {}
         for img_type in img_types:
 
             img_type_dir = os.path.join(img_dir, img_type)
@@ -129,8 +137,12 @@ class MVTecDataset(Dataset):
             if img_type == "good":
                 y.extend([0] * len(img_fpath_list))
                 mask.extend([None] * len(img_fpath_list))
+            elif img_type in self.anomaly_subset:
+                y.extend([i_n] * len(img_fpath_list))
+                mask.extend([None] * len(img_fpath_list))
+                i_n -= 1
             else:
-                y.extend([1] * len(img_fpath_list))
+                y.extend([i_an] * len(img_fpath_list))
                 gt_type_dir = os.path.join(gt_dir, img_type)
                 img_fname_list = [
                     os.path.splitext(os.path.basename(f))[0]
@@ -141,6 +153,7 @@ class MVTecDataset(Dataset):
                     for img_fname in img_fname_list
                 ]
                 mask.extend(gt_fpath_list)
+                i_an += 1
 
         assert len(x) == len(y), "number of x and y should be same"
 

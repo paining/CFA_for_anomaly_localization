@@ -25,6 +25,20 @@
             ]
         },
         {
+            "name": "see_best_model",
+            "type": "python",
+            "request": "launch",
+            "program": "trainer_cfa.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":[
+                "--data_path", "C:/Users/YSH/OneDrive - ysh-pleiony/OneDrive - Pleiony,Inc/data/public/mvtec_anomaly_detection", 
+                "--class_name", "bottle",
+                "--pretrained", "./mvtec_result/bottle/bottle_best.pt",
+                "--eval",
+            ]
+        },
+        {
             "name": "fine_tuning",
             "type": "python",
             "request": "launch",
@@ -34,8 +48,22 @@
             "args":[
                 "--data_path", "C:/Users/YSH/OneDrive - ysh-pleiony/OneDrive - Pleiony,Inc/data/public/mvtec_anomaly_detection", 
                 "--class_name", "bottle",
-                "--anomaly_set", "broken_small"
+                "--anomaly_set", "broken_small",
+                "--pretrained", "./mvtec_result/(1) bottle_backup/bottle_best.pt"
             ]
-        }
+        },
+        {
+            "name": "visualize_model(normal)",
+            "type": "python",
+            "request": "launch",
+            "program": "visualize_cfa_model.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":[
+                "--data_path", "C:/Users/YSH/OneDrive - ysh-pleiony/OneDrive - Pleiony,Inc/data/public/mvtec_anomaly_detection", 
+                "--class_name", "bottle",
+                "--pretrained", "./mvtec_result/(1) bottle_backup/bottle_best.pt"
+            ]
+        },
     ]
 }

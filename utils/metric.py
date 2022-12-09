@@ -111,6 +111,7 @@ def upsample(x, size, mode):
 def cal_img_roc(scores, gt_list):
     img_scores = scores.reshape(scores.shape[0], -1).max(axis=1)
     gt_list = np.asarray(gt_list)
+    gt_list = (gt_list > 0).astype(np.int32)
     fpr, tpr, _ = roc_curve(gt_list, img_scores)
     img_roc_auc = roc_auc_img(gt_list, img_scores)
 
