@@ -105,6 +105,9 @@ loss_fn = loss_fn.to(device)
 
 centroid = loss_fn.C.cpu().detach().numpy()
 
+with open("normal_centroids.pkl", "wb") as f:
+    pickle.dump({"centroid":centroid}, f)
+
 
 features = []
 labels = []
@@ -119,22 +122,46 @@ for x, y, mask in tqdm(test_loader, desc="evaluation", leave=False):
     feature = feature.cpu().detach().numpy()
     mask = mask.to(torch.int32)*y.reshape(-1,1,1,1).expand(mask.shape)
     mask = rearrange(mask, "b c h w -> (b h w) c")
-    mask = mask.cpu().detach().numpy()
+    mask = mask.squeeze(-1).cpu().detach().numpy()
     features.append(feature)
     labels.append(mask)
 
 features = np.concatenate(features, axis=0)
 labels = np.concatenate(labels, axis=0)
+
+plt.figure()
+plt.plot(labels)
+plt.show()
+
 #manifold = TSNE(verbose=1, n_jobs=8)
 manifold = umap.UMAP(
-    n_neighbors=20, n_components=2, metric="euclidean", verbose=True
+    n_neighbors=1000, n_components=2, metric="euclidean", verbose=True
 )
+
 #with console.status(f"Manifold by {manifold.__class__}", spinner="dots"):
 manifold_features = manifold.fit_transform(features)
 
 
-with open("backup.pkl", "w") as f:
+with open("backup.pkl", "wb") as f:
     pickle.dump({"manifold_features":manifold_features, "labels":labels}, f)
+
+# with open("backup.pkl", "rb") as f:
+#     loaded = pickle.load(f)
+
+# manifold_features = loaded["manifold_features"]
+# labels = loaded["labels"]
+
+
 fig, subplot = plt.subplots(1,1)
 
-subplot.scatter(manifold_features[:,0], manifold_features[:,1], cmap=mpl.colormaps['jet'])
+color_list = ["red", "blue", "darkgreen", "orange", "puple", "skyblue"]
+for l in range(labels.min(), labels.max()+1):
+    idx = labels == l
+    subplot.scatter(
+        manifold_features[idx,0], 
+        manifold_features[idx,1], 
+        c=color_list[l],
+        alpha=0.4,
+    )
+
+plt.show()

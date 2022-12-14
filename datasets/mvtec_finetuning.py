@@ -97,7 +97,7 @@ class MVTecAnomalyDataset(Dataset):
     def __getitem__(self, idx):
         x, y, mask = self.x[idx], self.y[idx], self.mask[idx]
 
-        tqdm.write(f"{os.path.relpath(x, self.dataset_path):40}, {y}")
+        tqdm.write(f"{'Anomaly set':20} | {os.path.relpath(x, self.dataset_path):60}, {y:5}")
         x = Image.open(x).convert("RGB")
         x = self.transform_x(x)
 

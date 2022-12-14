@@ -3,7 +3,7 @@ import argparse
 #import logging
 
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, ConcatDataset
 
 from cnn.resnet import wide_resnet50_2 as wrn50_2
 from cnn.resnet import resnet18 as res18
@@ -46,6 +46,7 @@ def parse_args():
     parser.add_argument("--anomaly_set", type=str, default=None)
     parser.add_argument("--epochs", type=int, default=30)
     parser.add_argument("--eval", action="store_true")
+    parser.add_argument("--is_normal", action="store_true")
 
     return parser.parse_args()
 
@@ -104,11 +105,11 @@ def run():
                 resize=256,
                 cropsize=args.size,
                 is_train=True,
-                is_normal=True,
+                is_normal=args.is_normal,
                 wild_ver=args.Rd,
             )
 
-        if args.anomaly_set:
+        if args.anomaly_set and args.is_normal:
             test_dataset = MVTecDataset(
                 dataset_path=args.data_path,
                 class_name=class_name,
@@ -163,11 +164,21 @@ def run():
         model.eval()
 
         loss_fn = DSVDD(
-            model, train_loader, args.cnn, args.gamma_c, args.gamma_d, device
+            model, args.cnn, args.gamma_c, args.gamma_d, device
         )
         if args.pretrained:
             print("loading pretrained model : ", args.pretrained)
-            loss_fn.load_state_dict(torch.load(args.pretrained))
+            state_dict = torch.load(args.pretrained)
+            if state_dict["C"].shape != loss_fn.C.shape:
+                loss_fn.C = torch.nn.parameter.Parameter(
+                    torch.zeros_like(state_dict["C"], device=loss_fn.device)
+                )
+            loss_fn.load_state_dict(state_dict)
+        else:
+            loss_fn.C = torch.zeros((0,), device=loss_fn.device)
+            loss_fn.add_centroid(model, train_loader, 3136)
+        if args.anomaly_set and args.is_normal and args.eval == False:
+            loss_fn.add_centroid(model, anomaly_loader, 3136)
         loss_fn = loss_fn.to(device)
 
         epochs = args.epochs
@@ -175,7 +186,7 @@ def run():
             {"params": loss_fn.parameters()},
         ]
         optimizer = optim.AdamW(
-            params=params, lr=1e-3, weight_decay=5e-4, amsgrad=True
+            params=params, lr=1e-2, weight_decay=5e-3, amsgrad=True
         )
 
         if args.eval:
@@ -244,6 +255,7 @@ def run():
                     desc="training", 
                     leave=False
                 ):
+                    optimizer.zero_grad()
                     p = model(x.to(device))
                     ap = model(ax.to(device))
                     p = [
@@ -277,7 +289,7 @@ def run():
             training_loss.append(np.mean(losses).item())
             ax_loss_train.clear()
             ax_loss_val.clear()
-            ax_loss_train.plot(training_loss, '-r', label="training")
+            ax_loss_train.semilogy(training_loss, '-r', label="training")
 
             loss_fn.eval()
             for x, y, mask in tqdm(test_loader, desc="evaluation", leave=False):

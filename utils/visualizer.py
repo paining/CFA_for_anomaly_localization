@@ -6,6 +6,8 @@ import os
 
 
 def plot_fig(test_img, scores, gts, threshold, save_dir, class_name):
+    vmin = scores.min()
+    vmax = scores.max() * 255
     num = len(scores)
     for i in range(num):
         img = test_img[i]
@@ -34,7 +36,14 @@ def plot_fig(test_img, scores, gts, threshold, save_dir, class_name):
         ax2 = fig.add_subplot(223)
         ax2.axis("off")
         ax2.imshow(img, cmap="gray", interpolation="none")
-        ax2.imshow(heat_map, cmap="jet", alpha=0.5, interpolation="none")
+        ax2.imshow(
+            heat_map, 
+            cmap="jet", 
+            alpha=0.5, 
+            interpolation="none", 
+            vmin=vmin, 
+            vmax=vmax
+        )
         ax2.title.set_text("Predicted heat map")
 
         ax3 = fig.add_subplot(224)

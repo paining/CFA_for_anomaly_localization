@@ -21,6 +21,7 @@ CLASS_NAMES = [
     "transistor",
     "wood",
     "zipper",
+    "bottle_new_normal",
 ]
 
 
@@ -92,11 +93,12 @@ class MVTecDataset(Dataset):
     def __getitem__(self, idx):
         x, y, mask = self.x[idx], self.y[idx], self.mask[idx]
         # if self.is_train == False: 
-        tqdm.write(f"{os.path.relpath(x, self.dataset_path):40}, {y}")
+        phase = "train" if self.is_train else "test"
+        tqdm.write(f"{f'{phase} set':20} | {os.path.relpath(x, self.dataset_path):60}, {y}")
         x = Image.open(x).convert("RGB")
         x = self.transform_x(x)
 
-        if y == 0:
+        if y <= 0:
             mask = torch.zeros([1, self.cropsize, self.cropsize])
         else:
             mask = Image.open(mask)

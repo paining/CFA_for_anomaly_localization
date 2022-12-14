@@ -5,3 +5,5 @@ __pycache__/
 
 # Result Directories
 mvtec_result
+*.pkl
+.vscode
